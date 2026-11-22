@@ -1,0 +1,15 @@
+<launch>
+  <arg name="id" />
+  <arg name="output" />
+  <rosparam file="$(find multi_proxy)/config/submapfusion_s3e.yaml" command="load" />
+  <node pkg="multi_proxy" type="multi_proxy_node" name="part3_robot_$(arg id)" output="screen" respawn="false">
+    <!-- Each robot hears only its own heartbeat, so no peer is registered. -->
+    <remap from="/multi_proxy/heartbeat" to="/part3/robot_$(arg id)/heartbeat" />
+    <param name="robot_name" value="robot_$(arg id)" />
+    <param name="robot_id" type="int" value="$(arg id)" />
+    <param name="use_bag_time" type="bool" value="true" />
+    <param name="log_folder" value="$(arg output)/log" />
+    <param name="pcd_folder" value="$(arg output)/pcd" />
+    <param name="pcm_matrix_folder" value="$(arg output)/log/pcm_matrix" />
+  </node>
+</launch>

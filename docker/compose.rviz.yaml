@@ -1,0 +1,8 @@
+services:
+  robot0:
+    environment:
+      DISPLAY: "${DISPLAY:?Set DISPLAY to the local X11 display}"
+      XAUTHORITY: /tmp/rviz.Xauthority
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - "${MULTIPROXY_RVIZ_XAUTHORITY:?Prepare the RViz Xauthority file}:/tmp/rviz.Xauthority:ro"

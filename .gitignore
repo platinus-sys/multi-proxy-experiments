@@ -1,0 +1,8 @@
+/datasets/
+/results/
+/src/multi_proxy/
+/docker/cache/
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store

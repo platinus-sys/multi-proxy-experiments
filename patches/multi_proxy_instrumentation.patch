@@ -1,0 +1,79 @@
+diff --git a/src/MultiProxyPipeline.cpp b/src/MultiProxyPipeline.cpp
+index 2d36ec2..c2d7f5d 100644
+--- a/src/MultiProxyPipeline.cpp
++++ b/src/MultiProxyPipeline.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "MultiProxyPipeline.h"
++#include <cstdlib>
+ void MultiProxyPipeline::paramLoader()
+ {
+   node_handler.param<std::string>("robot_name", _robot_name, "robot_2");
+@@ -1218,11 +1219,24 @@ void MultiProxyPipeline::globalOptimizationThread()
+   int clear_count = 0;
+   Utility::TicToc t_opt;
+   bool dual_update = true;
++  const bool record_timing = std::getenv("MULTIPROXY_RECORD_OPT_TIMING") != nullptr;
++  std::ofstream timing_file;
++  if (record_timing)
++  {
++    const auto timing_path = _log_folder + "/robot_" + std::to_string(_robot_id_th) + "_optimization_timing.csv";
++    timing_file.open(timing_path);
++    if (!timing_file)
++      ROS_ERROR("Cannot write optimization timing file: %s", timing_path.c_str());
++    else
++      timing_file << "wall_start_epoch,wall_end_epoch,elapsed_ms\n";
++  }
+ 
+   setNonCanonicalMode(); // 启动非阻塞输入模式
+   while (ros::ok())
+   {
+     rate.sleep();
++    const auto iteration_start = std::chrono::steady_clock::now();
++    const double iteration_wall_start = ros::WallTime::now().toSec();
+     t_opt.tic();
+ 
+     if (clear_count > 0)
+@@ -1429,6 +1443,13 @@ void MultiProxyPipeline::globalOptimizationThread()
+       _back_end->gtsamInterLoop(loop_accept_queue);
+       _back_end->gtsamUpdate(false);
+     }
++    if (timing_file.is_open())
++    {
++      const auto elapsed = std::chrono::steady_clock::now() - iteration_start;
++      const double elapsed_ms = std::chrono::duration<double, std::milli>(elapsed).count();
++      timing_file << std::fixed << std::setprecision(6) << iteration_wall_start << ","
++                  << ros::WallTime::now().toSec() << "," << elapsed_ms << "\n";
++    }
+   }
+ 
+   resetTerminalMode(); // 退出前恢复终端设置
+diff --git a/src/pcManager.cpp b/src/pcManager.cpp
+index 74f3bbf..6ab1336 100644
+--- a/src/pcManager.cpp
++++ b/src/pcManager.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "pcManager.h"
++#include <cstdlib>
+ 
+ pcManager::pcManager(){
+   downsize_filtermap.setLeafSize(0.2, 0.2, 0.2);
+@@ -93,6 +94,7 @@ pcl::PointCloud<PointTypePose>::Ptr pcManager::transformPointCloud(pcl::PointClo
+ 
+ void pcManager::printPointCloud(const pcl::PointCloud<PointType>::Ptr& source_cloud, const pcl::PointCloud<PointType>::Ptr& target_cloud, std::string file_name)
+ {
++  if (std::getenv("MULTIPROXY_DISABLE_DEBUG_PCD")) return;
+   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloudALL (new pcl::PointCloud<pcl::PointXYZRGB>());
+   // Fill in the CloudIn data
+   for (int i = 0; i < source_cloud->size(); i++)
+@@ -122,6 +124,7 @@ void pcManager::printPointCloud(const pcl::PointCloud<PointType>::Ptr& source_cl
+ 
+ void pcManager::printPointCloud(const pcl::PointCloud<PointType>::Ptr& source_cloud, const std::string file_name)
+ {
++  if (std::getenv("MULTIPROXY_DISABLE_DEBUG_PCD")) return;
+   pcl::io::savePCDFileASCII<PointType> (pcd_folder + "/" + file_name + ".pcd", *source_cloud);
+ }
+ 

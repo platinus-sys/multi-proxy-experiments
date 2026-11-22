@@ -1,0 +1,27 @@
+<launch>
+  <arg name="id" />
+  <arg name="output" />
+  <rosparam file="$(find multi_proxy)/config/submapfusion_s3e.yaml" command="load" />
+  <node pkg="multi_proxy" type="multi_proxy_node" name="part3_robot_$(arg id)" output="screen" respawn="false">
+    <!-- Only diagnostic ICP PCD exports are disabled; the final map is saved normally. -->
+    <env name="MULTIPROXY_DISABLE_DEBUG_PCD" value="1" />
+    <remap from="/robot_0/loop/descriptor_info" to="$(eval '/part3/rx/robot_0/loop/descriptor_info' if int(arg('id')) == 0 else '/part3/tx/robot_0/loop/descriptor_info')" />
+    <remap from="/robot_0/loop/candidate_info" to="$(eval '/part3/rx/robot_0/loop/candidate_info' if int(arg('id')) == 0 else '/part3/tx/robot_0/loop/candidate_info')" />
+    <remap from="/robot_0/loop/verified_loop" to="$(eval '/part3/rx/robot_0/loop/verified_loop' if int(arg('id')) == 0 else '/part3/tx/robot_0/loop/verified_loop')" />
+    <remap from="/robot_0/loop/dual_info" to="$(eval '/part3/rx/robot_0/loop/dual_info' if int(arg('id')) == 0 else '/part3/tx/robot_0/loop/dual_info')" />
+    <remap from="/robot_1/loop/descriptor_info" to="$(eval '/part3/rx/robot_1/loop/descriptor_info' if int(arg('id')) == 1 else '/part3/tx/robot_1/loop/descriptor_info')" />
+    <remap from="/robot_1/loop/candidate_info" to="$(eval '/part3/rx/robot_1/loop/candidate_info' if int(arg('id')) == 1 else '/part3/tx/robot_1/loop/candidate_info')" />
+    <remap from="/robot_1/loop/verified_loop" to="$(eval '/part3/rx/robot_1/loop/verified_loop' if int(arg('id')) == 1 else '/part3/tx/robot_1/loop/verified_loop')" />
+    <remap from="/robot_1/loop/dual_info" to="$(eval '/part3/rx/robot_1/loop/dual_info' if int(arg('id')) == 1 else '/part3/tx/robot_1/loop/dual_info')" />
+    <remap from="/robot_2/loop/descriptor_info" to="$(eval '/part3/rx/robot_2/loop/descriptor_info' if int(arg('id')) == 2 else '/part3/tx/robot_2/loop/descriptor_info')" />
+    <remap from="/robot_2/loop/candidate_info" to="$(eval '/part3/rx/robot_2/loop/candidate_info' if int(arg('id')) == 2 else '/part3/tx/robot_2/loop/candidate_info')" />
+    <remap from="/robot_2/loop/verified_loop" to="$(eval '/part3/rx/robot_2/loop/verified_loop' if int(arg('id')) == 2 else '/part3/tx/robot_2/loop/verified_loop')" />
+    <remap from="/robot_2/loop/dual_info" to="$(eval '/part3/rx/robot_2/loop/dual_info' if int(arg('id')) == 2 else '/part3/tx/robot_2/loop/dual_info')" />
+    <param name="robot_name" value="robot_$(arg id)" />
+    <param name="robot_id" type="int" value="$(arg id)" />
+    <param name="use_bag_time" type="bool" value="true" />
+    <param name="log_folder" value="$(arg output)/log" />
+    <param name="pcd_folder" value="$(arg output)/pcd" />
+    <param name="pcm_matrix_folder" value="$(arg output)/log/pcm_matrix" />
+  </node>
+</launch>

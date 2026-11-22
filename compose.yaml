@@ -1,0 +1,57 @@
+x-robot: &robot
+  image: sylaranh/multi-proxy:latest
+  build:
+    context: ./docker
+  stdin_open: true
+  tty: true
+  cap_add: [NET_ADMIN]
+  extra_hosts:
+    - "multi0:172.0.0.2"
+    - "multi1:172.0.0.3"
+    - "multi2:172.0.0.4"
+  volumes:
+    - ./docker/cache/build:/ws_code/build
+    - ./docker/cache/devel:/ws_code/devel
+    - ./src/multi_proxy:/ws_code/src/multi_proxy
+    - ./datasets/S3E:/datasets:ro
+  working_dir: /ws_code
+  command: ["bash", "-c", "exec sleep infinity"]
+
+services:
+  robot0:
+    <<: *robot
+    container_name: multi-proxy0
+    environment:
+      ROS_HOSTNAME: multi0
+      ROS_IP: 172.0.0.2
+      ROS_MASTER_URI: http://172.0.0.2:11311
+    networks:
+      robots:
+        ipv4_address: 172.0.0.2
+  robot1:
+    <<: *robot
+    container_name: multi-proxy1
+    environment:
+      ROS_HOSTNAME: multi1
+      ROS_IP: 172.0.0.3
+      ROS_MASTER_URI: http://172.0.0.2:11311
+    networks:
+      robots:
+        ipv4_address: 172.0.0.3
+  robot2:
+    <<: *robot
+    container_name: multi-proxy2
+    environment:
+      ROS_HOSTNAME: multi2
+      ROS_IP: 172.0.0.4
+      ROS_MASTER_URI: http://172.0.0.2:11311
+    networks:
+      robots:
+        ipv4_address: 172.0.0.4
+
+networks:
+  robots:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.0.0.0/24
