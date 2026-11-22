@@ -154,12 +154,10 @@ def table(headers, rows):
 
 def write_fragment(out, runs, aggregate, counts, rviz_running):
     grouped = {(row['mode'], row['metric']): row for row in aggregate}
-    per_run = {(mode, field): [number(row[field]) for row in runs if row['mode'] == mode]
-               for mode in MODES for field, _ in METRICS}
     report = '<h2>Сравнение повторов с прямым замером времени</h2>'
     report += '<p>Полный S3E College при скорости 1×, ожидание 120 с после воспроизведения. ' + \
         ', '.join(f'{label.lower()} — {counts[mode]}' for mode, label in MODES.items()) + \
-        '. В каждой ячейке приведены значения по отдельным повторам и среднее ± выборочное стандартное отклонение.</p>'
+        '. В таблице приведены среднее ± выборочное стандартное отклонение. Замеры отдельных прогонов доступны в comparison_per_run.csv.</p>'
     report += ('<p>RViz работал в каждом проходе с исходной конфигурацией визуализации.</p>' if rviz_running else
                '<p>Прогоны выполнены без RViz.</p>')
     rows = []
@@ -167,7 +165,7 @@ def write_fragment(out, runs, aggregate, counts, rviz_running):
         cells = [label]
         for mode in MODES:
             group = grouped[mode, field]
-            cells.append(' / '.join(per_run[mode, field]) + f" ({number(group['mean'])} ± {number(group['sample_sd'])})")
+            cells.append(f"{number(group['mean'])} ± {number(group['sample_sd'])}")
         rows.append(cells)
     report += table(['Показатель', *MODES.values()], rows)
     report += '<h3>Длительности этапов каждого прогона</h3>'
