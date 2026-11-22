@@ -2,7 +2,7 @@
 
 Код для опытов с тремя роботами на последовательности S3E College: совместная карта и траектории, влияние задержек и потерь связи, сравнение совместной оптимизации с независимой одометрией и обрывом связи.
 
-Подробные команды подготовки, запуска и анализа приведены в [инструкции по воспроизведению](docs/reproduction.md). Данные, карты и результаты в репозиторий не входят. Покрытие требований описано в [сверке с заданием](docs/assignment-check.md).
+Подробные команды подготовки, запуска и анализа приведены в [инструкции по воспроизведению](docs/reproduction.md). Метрики девяти прогонов доступны в [data/comparison_per_run.csv](data/comparison_per_run.csv). Исходные записи, облака и журналы хранятся отдельно. Покрытие требований описано в [сверке с заданием](docs/assignment-check.md).
 
 ## Подготовка
 
@@ -15,8 +15,8 @@ pip install -r requirements.txt
 mkdir -p src datasets/S3E
 git clone https://github.com/HITSZ-NRSL/Multi-Proxy.git src/multi_proxy
 git -C src/multi_proxy checkout e9f9e3a3ab3fdc4f38bfd724566904b9948264d4
-bash scripts/setup_workspace.sh
-bash scripts/download_ground_truth.sh
+bash src/setup_workspace.sh
+bash src/download_ground_truth.sh
 ```
 
 Положите подготовленный файл `S3E_College_robot_odom.bag` в `datasets/S3E/`. Его источник и SHA-256 указаны в подробной инструкции. Затем соберите контейнеры, соберите проект внутри контейнера и запустите ROS master по командам из инструкции.
@@ -25,11 +25,11 @@ bash scripts/download_ground_truth.sh
 
 ```bash
 # Нормальная связь, задержка 100 мс и потери 1%; по три повтора.
-REPEATS=3 bash experiments/part2/run_timing.sh
+REPEATS=3 bash src/part2/run_timing.sh
 
 # Независимая одометрия и обрыв межроботной передачи.
-bash experiments/part3/run_isolated.sh
-bash experiments/part3/run_interruption.sh
+bash src/part3/run_isolated.sh
+bash src/part3/run_interruption.sh
 ```
 
 Результаты сохраняются в `results/part2/` и `results/part3/`. Скрипты анализа и построения графиков, а также примеры их запуска перечислены в [инструкции](docs/reproduction.md). Границы фрагмента, параметры сети и другие настройки сохраняются вместе с результатами.

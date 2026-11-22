@@ -4,46 +4,54 @@ set -Eeuo pipefail
 # One run per mode by default; REPEATS=3 runs the nine trials required by the task.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$ROOT"
-REPEATS=${REPEATS:-1}
+REPEATS=1
 SETTLE_SECONDS=${SETTLE_SECONDS:-120}
 SAVE_TIMEOUT=${SAVE_TIMEOUT:-900}
-MIN_FREE_GB=${MIN_FREE_GB:-1}
+MIN_FREE_GB=${MIN_FREE_GB:-7}
 KEEP_WORKING_PCD=${KEEP_WORKING_PCD:-0}
 BAG_DURATION=${BAG_DURATION:-0}
-MODES=${MODES:-baseline,delay,loss}
-[[ $REPEATS =~ ^[1-9][0-9]*$ && $SETTLE_SECONDS =~ ^[0-9]+$ && $SAVE_TIMEOUT =~ ^[1-9][0-9]*$ && $MIN_FREE_GB =~ ^[1-9][0-9]*$ && $KEEP_WORKING_PCD =~ ^[01]$ && $BAG_DURATION =~ ^[0-9]+$ ]] || { echo 'Invalid configuration' >&2; exit 2; }
-IFS=, read -r -a modes <<< "$MODES"
-for mode in "${modes[@]}"; do [[ $mode == baseline || $mode == delay || $mode == loss ]] || { echo 'Invalid mode' >&2; exit 2; }; done
+BLOCK_START_SECONDS=${BLOCK_START_SECONDS:-400}
+BLOCK_LENGTH_SECONDS=${BLOCK_LENGTH_SECONDS:-120}
+[[ $REPEATS =~ ^[1-9][0-9]*$ && $SETTLE_SECONDS =~ ^[0-9]+$ && $SAVE_TIMEOUT =~ ^[1-9][0-9]*$ && $MIN_FREE_GB =~ ^[1-9][0-9]*$ && $KEEP_WORKING_PCD =~ ^[01]$ && $BAG_DURATION =~ ^[0-9]+$ && $BLOCK_START_SECONDS =~ ^[0-9]+$ && $BLOCK_LENGTH_SECONDS =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid configuration' >&2; exit 2; }
+(( BAG_DURATION == 0 || BAG_DURATION > BLOCK_START_SECONDS + BLOCK_LENGTH_SECONDS + 2 )) || { echo 'Bag duration is too short for the interruption' >&2; exit 2; }
 bag_args=()
 (( BAG_DURATION > 0 )) && bag_args+=(--duration "$BAG_DURATION")
 
 SESSION=$(date -u +%Y%m%dT%H%M%SZ)_$$
-OUT="$ROOT/results/part2/timing_$SESSION"
-STAGE_ROOT="$ROOT/src/multi_proxy/part2_work/$SESSION"
-CONTAINER_ROOT="/ws_code/src/multi_proxy/part2_work/$SESSION"
+OUT="$ROOT/results/part3/$SESSION"
+STAGE_ROOT="$ROOT/src/multi_proxy/part3_work/$SESSION"
+CONTAINER_ROOT="/ws_code/src/multi_proxy/part3_work/$SESSION"
 MASTER=http://172.0.0.2:11311
-NET="$ROOT/experiments/part2/network.sh"
+NET="$ROOT/src/part2/network.sh"
 bag=/datasets/S3E_College_robot_odom.bag
 containers=(multi-proxy0 multi-proxy1 multi-proxy2)
 pids=()
 recorder_pid=''
+bridge_pid=''
+controller_pid=''
+disk_watch_pid=''
 network_active=0
 sim_changed=0
 old_sim=''
 current_out=''
-disk_watch_pid=''
 
 ros() {
   docker exec multi-proxy0 bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; "$@"' _ "$@"
 }
 stop_nodes() {
+  if [[ -n $controller_pid ]]; then kill "$controller_pid" 2>/dev/null || true; wait "$controller_pid" 2>/dev/null || true; controller_pid=''; fi
+  if [[ -n $bridge_pid ]]; then
+    ros rosnode kill /part3_message_bridge >/dev/null 2>&1 || true
+    wait "$bridge_pid" 2>/dev/null || true
+    bridge_pid=''
+  fi
   if [[ -n $recorder_pid ]]; then
-    ros rosnode kill /part2_markers >/dev/null 2>&1 || true
+    ros rosnode kill /part3_markers >/dev/null 2>&1 || true
     wait "$recorder_pid" 2>/dev/null || true
     recorder_pid=''
   fi
   (( ${#pids[@]} )) || return 0
-  for i in 0 1 2; do ros rosnode kill "/part2_robot_$i" >/dev/null 2>&1 || true; done
+  for i in 0 1 2; do ros rosnode kill "/part3_robot_$i" >/dev/null 2>&1 || true; done
   for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; done
   pids=()
 }
@@ -77,19 +85,17 @@ for c in "${containers[@]}"; do
 done
 mkdir -p "$OUT" "$STAGE_ROOT"
 {
-  echo "session=$SESSION"; echo "started_utc=$(date -u -Is)"; echo "repeats=$REPEATS"; echo "settle_seconds=$SETTLE_SECONDS"; echo "save_timeout=$SAVE_TIMEOUT"; echo "keep_working_pcd=$KEEP_WORKING_PCD"; echo "master=$MASTER"; echo "bag=$bag"; echo 'bag_rate=1.0'; echo "bag_duration=$BAG_DURATION"; echo 'optimization_timing=enabled'; echo 'debug_pcd=disabled'; echo 'marker_compression=lz4'
+  echo "session=$SESSION"; echo "started_utc=$(date -u -Is)"; echo "repeats=$REPEATS"; echo "settle_seconds=$SETTLE_SECONDS"; echo "save_timeout=$SAVE_TIMEOUT"; echo "keep_working_pcd=$KEEP_WORKING_PCD"; echo "master=$MASTER"; echo "bag=$bag"; echo 'bag_rate=1.0'
   uname -a
   docker version --format 'docker_server={{.Server.Version}}'
   for c in "${containers[@]}"; do docker inspect -f '{{.Name}} image_id={{.Image}}' "$c"; done
-  docker exec multi-proxy0 sha256sum /ws_code/devel/lib/multi_proxy/multi_proxy_node
   git -C src/multi_proxy rev-parse HEAD
   git -C src/multi_proxy status --short
   sha256sum datasets/S3E/S3E_College_robot_odom.bag
 } > "$OUT/environment.txt"
 cp src/multi_proxy/config/submapfusion_s3e.yaml "$OUT/config.yaml"
-cp src/multi_proxy/launch/part2_experiment.launch "$OUT/launch.xml"
+cp src/multi_proxy/launch/part3_interruption.launch "$OUT/launch.xml"
 cp "$NET" "$OUT/network.sh"
-cp experiments/part2/run_timing.sh experiments/part2/analyze_optimization_timing.py experiments/part2/measure_observed_stability.py "$OUT/"
 ros rosbag info "$bag" > "$OUT/bag_info.txt"
 git -C src/multi_proxy diff -- . ':!log' > "$OUT/source_changes.diff" || true
 
@@ -105,6 +111,7 @@ for ((t=0; t<30; t++)); do
 done
 [[ $old_nodes != *'/multi_proxy_subMapFusion_robot_'* ]] || { echo 'Old robot nodes did not stop' >&2; exit 1; }
 
+modes=(interruption)
 for mode in "${modes[@]}"; do
   for ((rep=1; rep<=REPEATS; rep++)); do
     run="${mode}_$(printf '%02d' "$rep")"
@@ -114,11 +121,15 @@ for mode in "${modes[@]}"; do
     free_kb=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
     (( free_kb >= MIN_FREE_GB * 1024 * 1024 )) || { echo "Not enough free disk before $run: ${free_kb} KiB" >&2; exit 1; }
     mkdir -p "$current_out" "$stage/log/bw_compare" "$stage/log/pcm_matrix" "$stage/pcd/robot_0" "$stage/pcd/robot_1" "$stage/pcd/robot_2"
+    exec {trace_fd}> "$current_out/runner_trace.log"
+    BASH_XTRACEFD=$trace_fd
+    PS4='+ ${EPOCHREALTIME} ${BASHPID}: '
+    set -x
     runner_pid=$$
     (
       while sleep 10; do
         available=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
-        if (( available < 512 * 1024 )); then
+        if (( available < 1024 * 1024 )); then
           printf 'Low disk space: %s KiB at %s\n' "$available" "$(date -u -Is)" >> "$current_out/disk_guard.log"
           kill -TERM "$runner_pid"
           break
@@ -126,33 +137,68 @@ for mode in "${modes[@]}"; do
       done
     ) &
     disk_watch_pid=$!
-    printf 'mode=%s\nrepeat=%s\nstart_utc=%s\nsettle_seconds=%s\n' "$mode" "$rep" "$(date -u -Is)" "$SETTLE_SECONDS" > "$current_out/metadata.txt"
+    printf 'mode=%s\nrepeat=%s\nstart_utc=%s\nsettle_seconds=%s\nbag_duration=%s\nblock_start_seconds=%s\nblock_length_seconds=%s\n' "$mode" "$rep" "$(date -u -Is)" "$SETTLE_SECONDS" "$BAG_DURATION" "$BLOCK_START_SECONDS" "$BLOCK_LENGTH_SECONDS" > "$current_out/metadata.txt"
     echo "Starting $run"
-    bash "$NET" apply "$mode"
+    bash "$NET" apply baseline
     network_active=1
     bash "$NET" status > "$current_out/tc_before.txt"
     for i in 0 1 2; do
-      docker exec "${containers[$i]}" bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; exec roslaunch multi_proxy part2_experiment.launch id:="$1" output:="$2"' _ "$i" "$container_stage" > "$current_out/robot_$i.console.log" 2>&1 &
+      docker exec "${containers[$i]}" bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; exec roslaunch multi_proxy part3_interruption.launch id:="$1" output:="$2"' _ "$i" "$container_stage" > "$current_out/robot_$i.console.log" 2>&1 &
       pids+=("$!")
     done
     ready=0
     for ((t=0; t<90; t++)); do
       services=$(ros rosservice list 2>/dev/null || true)
       nodes=$(ros rosnode list 2>/dev/null || true)
-      if [[ $services == *'/robot_0/multi_proxy/save_traj'* && $services == *'/robot_1/multi_proxy/save_traj'* && $services == *'/robot_2/multi_proxy/save_traj'* && $nodes == *'/part2_robot_0'* && $nodes == *'/part2_robot_1'* && $nodes == *'/part2_robot_2'* ]]; then ready=1; break; fi
+      if [[ $services == *'/robot_0/multi_proxy/save_traj'* && $services == *'/robot_1/multi_proxy/save_traj'* && $services == *'/robot_2/multi_proxy/save_traj'* && $nodes == *'/part3_robot_0'* && $nodes == *'/part3_robot_1'* && $nodes == *'/part3_robot_2'* ]]; then ready=1; break; fi
       for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null || { echo 'Robot launch exited' >&2; exit 1; }; done
       sleep 1
     done
     (( ready )) || { echo 'Timed out waiting for robot services' >&2; exit 1; }
-    docker exec multi-proxy0 bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; exec rosbag record --lz4 -O "$1" __name:=part2_markers /tf /tf_static /robot_0/loop_closure_constraints /robot_1/loop_closure_constraints /robot_2/loop_closure_constraints /robot_0/key_frame /robot_1/key_frame /robot_2/key_frame' _ "$container_stage/markers.bag" > "$current_out/markers_record.log" 2>&1 &
+    ros rosparam set /part3/block_interrobot_data false
+    docker exec -i multi-proxy0 bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; exec python3 - "$1"' _ "$container_stage" < src/part3/message_bridge.py > "$current_out/bridge.log" 2>&1 &
+    bridge_pid=$!
+    bridge_ready=0
+    for ((t=0; t<30; t++)); do
+      nodes=$(ros rosnode list 2>/dev/null || true)
+      if [[ $nodes == *'/part3_message_bridge'* ]]; then bridge_ready=1; break; fi
+      kill -0 "$bridge_pid" 2>/dev/null || { echo 'Message bridge exited' >&2; exit 1; }
+      sleep 1
+    done
+    (( bridge_ready )) || { echo 'Message bridge did not start' >&2; exit 1; }
+    docker exec multi-proxy0 bash -c 'source /ws_code/devel/setup.bash; export ROS_MASTER_URI=http://172.0.0.2:11311; exec rosbag record -O "$1" __name:=part3_markers /tf /tf_static /robot_0/loop_closure_constraints /robot_1/loop_closure_constraints /robot_2/loop_closure_constraints /robot_0/key_frame /robot_1/key_frame /robot_2/key_frame' _ "$container_stage/markers.bag" > "$current_out/markers_record.log" 2>&1 &
     recorder_pid=$!
     sleep 5
     kill -0 "$recorder_pid" 2>/dev/null || { echo 'Marker recorder exited' >&2; exit 1; }
+    {
+      for i in 0 1 2; do
+        for kind in descriptor_info candidate_info verified_loop dual_info; do
+          for side in tx rx; do
+            echo "/part3/$side/robot_$i/loop/$kind"
+            ros rostopic info "/part3/$side/robot_$i/loop/$kind"
+          done
+        done
+      done
+      ros rostopic info /multi_proxy/heartbeat
+    } > "$current_out/channel_topology.txt"
     ros rosnode list > "$current_out/rosnodes.txt"
-    ros rosparam dump /tmp/part2_params_"$SESSION".yaml
-    docker cp "multi-proxy0:/tmp/part2_params_$SESSION.yaml" "$current_out/rosparams.yaml"
+    ros rosparam dump /tmp/part3_params_"$SESSION".yaml
+    docker cp "multi-proxy0:/tmp/part3_params_$SESSION.yaml" "$current_out/rosparams.yaml"
     printf 'play_start_utc=%s\nplay_start_epoch=%s\n' "$(date -u -Is)" "$(date +%s.%N)" >> "$current_out/metadata.txt"
+    (
+      sleep "$BLOCK_START_SECONDS"
+      printf 'block_requested_epoch=%s\n' "$(date +%s.%N)" >> "$current_out/outage_events.txt"
+      ros rosparam set /part3/block_interrobot_data true
+      printf 'block_command_completed_epoch=%s\n' "$(date +%s.%N)" >> "$current_out/outage_events.txt"
+      sleep "$BLOCK_LENGTH_SECONDS"
+      printf 'restore_requested_epoch=%s\n' "$(date +%s.%N)" >> "$current_out/outage_events.txt"
+      ros rosparam set /part3/block_interrobot_data false
+      printf 'restore_command_completed_epoch=%s\n' "$(date +%s.%N)" >> "$current_out/outage_events.txt"
+    ) &
+    controller_pid=$!
     ros rosbag play --rate 1.0 "${bag_args[@]}" "$bag" > "$current_out/rosbag_play.log" 2>&1
+    wait "$controller_pid"
+    controller_pid=''
     printf 'play_end_utc=%s\nplay_end_epoch=%s\n' "$(date -u -Is)" "$(date +%s.%N)" >> "$current_out/metadata.txt"
     sleep "$SETTLE_SECONDS"
     for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null || { echo 'Robot launch exited before saving' >&2; exit 1; }; done
@@ -207,6 +253,8 @@ sys.exit(0)' "$container_stage" || closed=0
     cp -a "$stage/log" "$current_out/log"
     [[ -s $stage/markers.bag ]] || { echo 'Marker bag missing or empty' >&2; exit 1; }
     cp "$stage/markers.bag" "$current_out/markers.bag"
+    [[ -s $stage/bridge_counts.csv ]] || { echo 'Bridge log missing' >&2; exit 1; }
+    cp "$stage/bridge_counts.csv" "$current_out/bridge_counts.csv"
     if (( KEEP_WORKING_PCD )); then
       mv "$stage/pcd" "$current_out/working_pcd"
     else
@@ -216,17 +264,15 @@ sys.exit(0)' "$container_stage" || closed=0
     diff -qr "$stage/log" "$current_out/log" >/dev/null
     cmp "$stage/markers.bag" "$current_out/markers.bag"
     docker exec multi-proxy0 rm -rf -- "$container_stage"
-    docker run --rm --network none -i -v "$current_out:/data" --entrypoint /bin/bash sylaranh/multi-proxy:latest \
-      -c 'source /opt/ros/noetic/setup.bash; python3 - /data/markers.bag /data/metadata.txt /data/observed_stability.json' \
-      < "$ROOT/experiments/part2/measure_observed_stability.py" > "$current_out/stability_analysis.log" 2>&1
     printf 'completed_utc=%s\n' "$(date -u -Is)" >> "$current_out/metadata.txt"
     echo complete > "$current_out/COMPLETE.txt"
+    set +x
+    unset BASH_XTRACEFD
     kill "$disk_watch_pid" 2>/dev/null || true
     wait "$disk_watch_pid" 2>/dev/null || true
     disk_watch_pid=''
     current_out=''
   done
 done
-python3 "$ROOT/experiments/part2/summarize.py" "$OUT"
-python3 "$ROOT/experiments/part2/analyze_optimization_timing.py" "$OUT"
+
 echo "Results: $OUT"

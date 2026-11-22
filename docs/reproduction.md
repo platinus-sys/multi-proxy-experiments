@@ -22,8 +22,8 @@ pip install -r requirements.txt
 mkdir -p src datasets/S3E
 git clone https://github.com/HITSZ-NRSL/Multi-Proxy.git src/multi_proxy
 git -C src/multi_proxy checkout e9f9e3a3ab3fdc4f38bfd724566904b9948264d4
-bash scripts/setup_workspace.sh
-bash scripts/download_ground_truth.sh
+bash src/setup_workspace.sh
+bash src/download_ground_truth.sh
 ```
 
 Поместите подготовленный `S3E_College_robot_odom.bag` в `datasets/S3E/`.
@@ -80,7 +80,7 @@ docker exec multi-proxy0 bash -c 'source /ws_code/devel/setup.bash; rosnode ping
 **Качество связи и время оптимизации.** Один проход каждого режима:
 
 ```bash
-bash experiments/part2/run_timing.sh
+bash src/part2/run_timing.sh
 ```
 
 Режимы: без помех, задержка 100 мс на отправителе и потери 1% на отправителе.
@@ -88,15 +88,15 @@ bash experiments/part2/run_timing.sh
 полный bag в реальном времени, ждёт 120 с и сохраняет данные. Сценарий останавливает
 текущие узлы роботов и временно меняет `/use_sim_time`; не запускайте его
 параллельно с другими опытами. Результат — новая папка `results/part2/timing_*`.
-Для короткой проверки: `MODES=baseline BAG_DURATION=30 SETTLE_SECONDS=15 bash experiments/part2/run_timing.sh`.
+Для короткой проверки: `MODES=baseline BAG_DURATION=30 SETTLE_SECONDS=15 bash src/part2/run_timing.sh`.
 
 После запуска подставьте имя созданной папки:
 
 ```bash
 SESSION=results/part2/timing_ИМЯ_ЗАПУСКА
-python3 experiments/part2/analyze_metrics.py --session "$SESSION"
-python3 experiments/part2/make_figures.py --session "$SESSION" --repeat 1
-python3 experiments/part2/analyze_optimization_timing.py "$SESSION"
+python3 src/part2/analyze_metrics.py --session "$SESSION"
+python3 src/part2/make_figures.py --session "$SESSION" --repeat 1
+python3 src/part2/analyze_optimization_timing.py "$SESSION"
 ```
 
 ATE рассчитывается с одним общим SE(3) для всех роботов каждого повтора;
@@ -107,8 +107,8 @@ ATE рассчитывается с одним общим SE(3) для всех 
 ```bash
 mkdir -p results/part2
 docker exec -i multi-proxy0 bash -c 'source /opt/ros/noetic/setup.bash; python3 - /datasets/S3E_College_robot_odom.bag' \
-  < experiments/part2/inspect_input_end.py > results/part2/college_input_last_stamps.json
-python3 experiments/part2/analyze_input_completion.py "$SESSION"
+  < src/part2/inspect_input_end.py > results/part2/college_input_last_stamps.json
+python3 src/part2/analyze_input_completion.py "$SESSION"
 ```
 
 Чтобы объединить совместимые полноразмерные прогоны из нескольких сессий,
@@ -121,15 +121,15 @@ bag по команде выше.
 
 ```bash
 COMPARISON=results/part2/comparison
-python3 experiments/part2/compare_repeats.py --out "$COMPARISON" "$SESSION"
-python3 experiments/part2/make_figures.py --session "$COMPARISON" --repeat 1
+python3 src/part2/compare_repeats.py --out "$COMPARISON" "$SESSION"
+python3 src/part2/make_figures.py --session "$COMPARISON" --repeat 1
 ```
 
 **Вклад совместной оптимизации и обрыв данных.** Отдельные полные проходы:
 
 ```bash
-bash experiments/part3/run_isolated.sh
-bash experiments/part3/run_interruption.sh
+bash src/part3/run_isolated.sh
+bash src/part3/run_interruption.sh
 ```
 
 В первом режиме heartbeat разделён по роботам, поэтому соседи не обнаруживаются.
@@ -142,10 +142,10 @@ mkdir -p results/part3/input_odom
 docker run --rm --network none -i -v "$PWD/datasets/S3E:/datasets:ro" \
   -v "$PWD/results/part3/input_odom:/out" --entrypoint /bin/bash sylaranh/multi-proxy:latest \
   -c 'source /opt/ros/noetic/setup.bash; python3 - /datasets/S3E_College_robot_odom.bag /out' \
-  < experiments/part3/extract_input_odometry.py
+  < src/part3/extract_input_odometry.py
 
 ISO=results/part3/ИМЯ_ИЗОЛИРОВАННОГО_ЗАПУСКА
-python3 experiments/part3/analyze_comparison.py "$ISO/isolated/run_1/log" \
+python3 src/part3/analyze_comparison.py "$ISO/isolated/run_1/log" \
   --joint-log "$SESSION/baseline/run_1/log" --out "$ISO/comparison"
 ```
 
@@ -156,10 +156,10 @@ RUN=results/part3/ИМЯ_ЗАПУСКА/interruption/run_1
 docker run --rm --network none -i -v "$PWD/$RUN:/data" \
   --entrypoint /bin/bash sylaranh/multi-proxy:latest \
   -c 'source /opt/ros/noetic/setup.bash; python3 - /data/markers.bag /data/markers.bag /data' \
-  < experiments/part3/extract_observations.py
-python3 experiments/part3/analyze_interruption.py "$RUN"
-python3 experiments/part3/analyze_snapshots.py "$RUN"
-python3 experiments/part3/analyze_comparison.py "$RUN/log" --candidate-shared-frame \
+  < src/part3/extract_observations.py
+python3 src/part3/analyze_interruption.py "$RUN"
+python3 src/part3/analyze_snapshots.py "$RUN"
+python3 src/part3/analyze_comparison.py "$RUN/log" --candidate-shared-frame \
   --joint-log "$SESSION/baseline/run_1/log" --out "$RUN/comparison"
 ```
 
